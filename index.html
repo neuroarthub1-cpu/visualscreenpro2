@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oculomotor Training App</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<style>
+:root {
+  --bg:#f3f5f8; --panel:#fff; --ink:#192333;
+  --muted:#637084; --line:#dce2ea; --accent:#1769e0;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; font-family:Arial,Helvetica,sans-serif;
+  color:var(--ink); background:var(--bg);
+}
+header {
+  background:#172338; color:#fff; padding:15px 20px;
+  display:flex; justify-content:space-between; align-items:center;
+  gap:12px; flex-wrap:wrap;
+}
+header h1 { margin:0; font-size:20px; }
+header p { margin:5px 0 0; color:#d3dceb; font-size:12px; }
+main { max-width:1450px; margin:auto; padding:14px; }
+.panel {
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:12px; padding:14px; margin-bottom:14px;
+}
+.controls {
+  display:flex; gap:10px; flex-wrap:wrap; align-items:end;
+}
+.field { display:flex; flex-direction:column; gap:5px; min-width:130px; }
+label { font-size:12px; color:var(--muted); }
+select,input,button {
+  font:inherit; border:1px solid #cbd3df; border-radius:7px;
+  padding:9px; background:white; color:var(--ink);
+}
+input[type="range"] { padding:0; }
+input[type="checkbox"] { accent-color:var(--accent); }
+button { cursor:pointer; font-weight:600; }
+button.primary { background:var(--accent); color:white; border-color:var(--accent); }
+button:disabled { opacity:.45; cursor:not-allowed; }
+#status { font-size:13px; color:var(--muted); margin-top:10px; }
+.workspace {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 230px;
+  gap:14px;
+  align-items:start;
+}
+#stageWrap {
+  position:relative; width:100%; height:min(65vh,650px);
+  min-height:360px; background:#10141b; overflow:hidden;
+  border-radius:10px; border:1px solid #222a38;
+}
+#stage { display:block; width:100%; height:100%; }
+#cameraBox {
+  width:100%; background:#080b10;
+  border:1px solid #657187; border-radius:8px; overflow:hidden;
+}
+#previewWrap { position:relative; width:100%; line-height:0; }
+#video {
+  display:block; width:100%; height:auto;
+  transform:scaleX(-1); background:#080b10;
+}
+#irisOverlay {
+  position:absolute; inset:0; width:100%; height:100%;
+  transform:scaleX(-1); pointer-events:none;
+}
+#cameraLabel {
+  font-size:11px; text-align:center; padding:7px 5px;
+  color:white; line-height:1.4;
+}
+.cameraOptions {
+  display:flex; align-items:center; gap:7px;
+  padding:10px 2px; font-size:12px;
+}
+.cameraOptions label {
+  display:flex; align-items:center; gap:6px; cursor:pointer;
+}
+.cameraOptions input { margin:0; }
+#recordingCanvas { display:none; }
+.graphGrid {
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;
+}
+.graphPanel { min-width:0; }
+.graphPanel h3 { font-size:14px; margin:0 0 8px; }
+.graph { width:100%; height:210px; display:block; }
+.legend { font-size:12px; color:var(--muted); margin-top:5px; }
+.dot {
+  display:inline-block; width:9px; height:9px;
+  border-radius:50%; margin-right:4px;
+}
+.note { color:var(--muted); font-size:12px; line-height:1.5; }
+.speedValue { font-size:12px; color:var(--ink); }
+.symptomGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.symptomGrid strong { font-size:13px; }
+.symptomFields { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:8px; }
+.symptomFields label { display:flex; flex-direction:column; gap:4px; font-size:11px; }
+.symptomFields input { width:100%; min-width:0; padding:7px; }
+@media(max-width:720px) {
+  .symptomGrid { grid-template-columns:1fr; }
+  .symptomFields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:850px) {
+  .workspace { grid-template-columns:minmax(0,1fr); }
+  #cameraBox { max-width:320px; }
+}
+@media(max-width:720px) {
+  main { padding:8px; }
+  .graphGrid { grid-template-columns:1fr; }
+  #stageWrap { min-height:330px; height:55vh; }
+  header h1 { font-size:17px; }
+}
+
+/* Password gate */
+#appPasswordGate {
+  position:fixed; inset:0; z-index:999999; display:flex; align-items:center;
+  justify-content:center; padding:20px; background:rgba(15,25,42,.97);
+}
+#appPasswordGate .gate-card {
+  width:min(100%,420px); background:#fff; color:#192333; padding:28px;
+  border-radius:16px; box-shadow:0 20px 70px rgba(0,0,0,.35); text-align:center;
+}
+#appPasswordGate h2 { margin:0 0 8px; font-size:24px; }
+#appPasswordGate p { color:#637084; font-size:14px; line-height:1.5; margin:0 0 18px; }
+#appPasswordGate input { width:100%; margin-bottom:12px; padding:12px; font-size:16px; }
+#appPasswordGate button { width:100%; padding:12px; background:#1769e0; color:white; border:0; }
+#appPasswordGate .gate-error { display:none; color:#b42318; font-size:13px; margin:0 0 12px; }
+#appPasswordGate .gate-error.visible { display:block; }
+body.password-locked { overflow:hidden; }
+
+</style>
+</head>
+
+<body class="password-locked">
+
+<div id="appPasswordGate" role="dialog" aria-modal="true" aria-labelledby="appGateTitle">
+  <div class="gate-card">
+    <h2 id="appGateTitle">Private Client Access</h2>
+    <p>Enter the access password provided to you to open the Oculomotor Training App.</p>
+    <form id="appGateForm">
+      <input id="appGatePassword" type="password" placeholder="Enter access password" autocomplete="current-password" aria-label="Access password" required autofocus>
+      <div id="appGateError" class="gate-error" role="alert">Incorrect password. Please try again.</div>
+      <button type="submit">Unlock App</button>
+    </form>
+  </div>
+</div>
+
+<header>
+  <div>
+    <h1>Oculomotor Training App</h1>
+    <p>Webcam-based eye tracking · stimulus recording · trajectory graphs</p>
+  </div>
+  <div id="cameraStatus">Camera not started</div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="controls">
+      <div class="field">
+        <label for="mode">Exercise</label>
+        <select id="mode">
+          <option value="pursuitH">Smooth pursuit — horizontal</option>
+          <option value="pursuitV">Smooth pursuit — vertical</option>
+          <option value="pursuitD1">Smooth pursuit — diagonal ↘</option>
+          <option value="pursuitD2">Smooth pursuit — diagonal ↙</option>
+          <option value="saccadeH">Saccades — horizontal</option>
+          <option value="saccadeV">Saccades — vertical</option>
+          <option value="saccadeD">Saccades — diagonal</option>
+          <option value="saccadeRandom">Saccades — random</option>
+          <option value="opkLeft">OPK — horizontal, moving left</option>
+          <option value="opkRight">OPK — horizontal, moving right</option>
+          <option value="opkUp">OPK — vertical, moving up</option>
+          <option value="opkDown">OPK — vertical, moving down</option>
+          <option value="npc">Near point of convergence (screen-based observation)</option>
+          <option value="vorH">VOR — horizontal</option>
+          <option value="vorV">VOR — vertical</option>
+          <option value="vorCancel">VOR cancellation</option>
+          <option value="coverTest">Cover test observation</option>
+          <option value="gazeFixation">Gaze fixation</option>
+          <option value="vms">Visual motion sensitivity (VMS)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="speed">Stimulus speed: <span id="speedValue">4 / 8</span></label>
+        <input id="speed" type="range" min="0" max="8" step="1" value="4">
+      </div>
+
+      <div class="field">
+        <label for="duration">Exercise duration</label>
+        <select id="duration">
+          <option value="15">15 seconds</option>
+          <option value="30" selected>30 seconds</option>
+          <option value="60">60 seconds</option>
+          <option value="120">120 seconds</option>
+        </select>
+      </div>
+
+      <button id="cameraBtn" class="primary">Start camera</button>
+      <button id="calibrateBtn" disabled>Calibrate</button>
+      <button id="startBtn" class="primary" disabled>Start recording</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="csvBtn" disabled>Save CSV</button>
+      <button id="pdfBtn" disabled>Save PDF report</button>
+      <button id="videoBtn" disabled>Save camera video</button>
+    </div>
+    <div id="status">Start the camera first. Keep your face visible and the camera steady.</div>
+    <div class="note" style="margin-top:8px">Symptom ratings use a 0–10 scale (0 = none, 10 = severe). Enter baseline ratings before each subtest and post-test ratings after it. Ratings are saved with the session export.</div>
+    <div class="symptomGrid" style="margin-top:10px">
+      <div>
+        <strong>Symptoms before test</strong>
+        <div class="symptomFields">
+          <label>Headache <input id="preHeadache" type="number" min="0" max="10" step="1" value="0"></label>
+          <label>Dizziness <input id="preDizziness" type="number" min="0" max="10" step="1" value="0"></label>
+          <label>Nausea <input id="preNausea" type="number" min="0" max="10" step="1" value="0"></label>
+          <label>Fogginess <input id="preFogginess" type="number" min="0" max="10" step="1" value="0"></label>
+        </div>
+      </div>
+      <div>
+        <strong>Symptoms after test</strong>
+        <div class="symptomFields">
+          <label>Headache <input id="postHeadache" type="number" min="0" max="10" step="1" value="0"></label>
+          <label>Dizziness <input id="postDizziness" type="number" min="0" max="10" step="1" value="0"></label>
+          <label>Nausea <input id="postNausea" type="number" min="0" max="10" step="1" value="0"></label>
+          <label>Fogginess <input id="postFogginess" type="number" min="0" max="10" step="1" value="0"></label>
+        </div>
+      </div>
+    </div>
+    <div class="controls" style="margin-top:10px">
+      <div class="field" style="min-width:180px">
+        <label for="npcDistance">NPC target distance (cm, if physically measured)</label>
+        <input id="npcDistance" type="number" min="0" max="100" step="0.5" placeholder="Enter measured distance">
+      </div>
+      <button id="markBreakBtn" disabled>Mark NPC break</button>
+      <button id="markRecoveryBtn" disabled>Mark NPC recovery</button>
+      <button id="markObservationBtn" disabled>Mark observation</button>
+    </div>
+    <div id="eventStatus" class="note" style="margin-top:7px">Event markers appear in the CSV and PDF report.</div>
+  </section>
+
+  <section class="panel">
+    <div class="workspace">
+      <div>
+        <div id="stageWrap">
+          <canvas id="stage"></canvas>
+        </div>
+        <p class="note">
+          Follow the red target during pursuit and saccade exercises.
+          During calibration, follow the green dot. The estimated-gaze
+          marker is not displayed on the stimulus screen.
+        </p>
+      </div>
+
+      <aside>
+        <div id="cameraBox">
+          <div id="previewWrap">
+            <video id="video" autoplay muted playsinline></video>
+            <canvas id="irisOverlay" width="640" height="480"></canvas>
+          </div>
+          <div id="cameraLabel">Live camera preview</div>
+        </div>
+
+        <div class="cameraOptions">
+          <label>
+            <input id="showIris" type="checkbox" checked>
+            Show green iris markers
+          </label>
+        </div>
+
+        <p class="note">
+          Green dots mark the estimated iris centres. The saved camera
+          video includes these markers when enabled.
+        </p>
+      </aside>
+    </div>
+
+    <canvas id="recordingCanvas" width="640" height="480"></canvas>
+
+    <p class="note">
+      Webcam gaze estimation is approximate and may be affected by lighting,
+      head movement, glasses, camera position and tracking loss. This app
+      is not a validated clinical eye-tracking measurement system.
+    </p>
+    <p class="note">
+      Camera video is recorded separately from the stimulus display.
+      Save the video after stopping the exercise and after video processing
+      has finished.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:17px;margin:0 0 12px;">Recorded trajectories</h2>
+    <div class="graphGrid">
+      <div class="graphPanel">
+        <h3>Horizontal position (X) over time</h3>
+        <canvas class="graph" id="graphX"></canvas>
+        <div class="legend">
+          <span class="dot" style="background:#e44747"></span>Target
+          &nbsp;&nbsp;<span class="dot" style="background:#1769e0"></span>Estimated gaze
+        </div>
+      </div>
+      <div class="graphPanel">
+        <h3>Vertical position (Y) over time</h3>
+        <canvas class="graph" id="graphY"></canvas>
+        <div class="legend">
+          <span class="dot" style="background:#e44747"></span>Target
+          &nbsp;&nbsp;<span class="dot" style="background:#1769e0"></span>Estimated gaze
+        </div>
+      </div>
+      <div class="graphPanel">
+        <h3>Horizontal velocity (X) over time</h3>
+        <canvas class="graph" id="graphVX"></canvas>
+        <div class="legend"><span class="dot" style="background:#1769e0"></span>Estimated gaze velocity</div>
+      </div>
+      <div class="graphPanel">
+        <h3>Vertical velocity (Y) over time</h3>
+        <canvas class="graph" id="graphVY"></canvas>
+        <div class="legend"><span class="dot" style="background:#1769e0"></span>Estimated gaze velocity</div>
+      </div>
+      <div class="graphPanel">
+        <h3>Horizontal acceleration (X) over time</h3>
+        <canvas class="graph" id="graphAX"></canvas>
+        <div class="legend"><span class="dot" style="background:#1769e0"></span>Estimated gaze acceleration</div>
+      </div>
+      <div class="graphPanel">
+        <h3>Vertical acceleration (Y) over time</h3>
+        <canvas class="graph" id="graphAY"></canvas>
+        <div class="legend"><span class="dot" style="background:#1769e0"></span>Estimated gaze acceleration</div>
+      </div>
+    </div>
+    <p class="note">
+      Position is expressed as a percentage of the stimulus area. Velocity
+      and acceleration are calculated from changes in estimated position
+      over time. Gaps indicate unavailable tracking data.
+    </p>
+  </section>
+</main>
+
+<script>
+(() => {
+"use strict";
+
+const $ = id => document.getElementById(id);
+const video = $("video");
+const stage = $("stage");
+const ctx = stage.getContext("2d");
+const irisOverlay = $("irisOverlay");
+const irisCtx = irisOverlay.getContext("2d");
+const recordingCanvas = $("recordingCanvas");
+const recordingCtx = recordingCanvas.getContext("2d");
+
+let faceMesh = null;
+let camera = null;
+let cameraStarted = false;
+let running = false;
+let calibrating = false;
+let animationFrame = null;
+let lastFrameTime = 0;
+let exerciseStart = 0;
+let exerciseElapsed = 0;
+let calibrationSamples = [];
+let calibrationPoints = [];
+let calibrationModelX = null;
+let calibrationModelY = null;
+let latestFeatures = null;
+let latestGaze = null;
+let lastValidGaze = null;
+let lastGazeTime = 0;
+let latestIrisLandmarks = null;
+let records = [];
+let target = {x:0.5,y:0.5};
+let saccadeNextAt = 0;
+let calibrationIndex = 0;
+let calibrationPointStart = 0;
+let calibrationFeatureSamples = [];
+let opkOffset = 0;
+let lastRecordAt = 0;
+let stageWidth = 800;
+let stageHeight = 500;
+
+let cameraRecorder = null;
+let cameraVideoChunks = [];
+let cameraVideoBlob = null;
+let cameraRecordingAvailable = false;
+let eventMarkers = [];
+let sessionSymptoms = null;
+
+const GAP_MS = 250;
+const RECORD_INTERVAL_MS = 33;
+const SMOOTHING = 0.28;
+const CALIBRATION_HOLD_MS = 1100;
+const VIDEO_WIDTH = 640;
+const VIDEO_HEIGHT = 480;
+
+function setStatus(message) {
+  $("status").textContent = message;
+}
+function setCameraStatus(message) {
+  $("cameraStatus").textContent = message;
+}
+function mean(values) {
+  return values.length ? values.reduce((a,b)=>a+b,0)/values.length : NaN;
+}
+function clamp(n,min,max) {
+  return Math.max(min,Math.min(max,n));
+}
+function getSpeed() {
+  return Number($("speed").value);
+}
+function isOPK(mode) {
+  return ["opkLeft","opkRight","opkUp","opkDown"].includes(mode);
+}
+function isNPC(mode) { return mode === "npc"; }
+function isObservationMode(mode) {
+  return ["vorH","vorV","vorCancel","coverTest","gazeFixation"].includes(mode);
+}
+function isStaticDotMode(mode) {
+  return isObservationMode(mode);
+}
+function getSpeedMultiplier() {
+  // Preserve level 0 and scale level 8 to 1.5x its previous speed.
+  return 1 + (getSpeed() / 8) * 0.5;
+}
+function readSymptomScores(prefix) {
+  const names=["Headache","Dizziness","Nausea","Fogginess"];
+  const result={};
+  for (const name of names) {
+    const el=$(`${prefix}${name}`);
+    result[name.toLowerCase()]=clamp(Number(el.value)||0,0,10);
+    el.value=result[name.toLowerCase()];
+  }
+  return result;
+}
+function readSessionSymptoms() {
+  return {
+    before:readSymptomScores("pre"),
+    after:readSymptomScores("post"),
+    npc_distance_cm:$("npcDistance").value===""?"":Number($("npcDistance").value)
+  };
+}
+function markEvent(label) {
+  if (!running) {
+    $("eventStatus").textContent="Start a recording before adding event markers.";
+    return;
+  }
+  const event={
+    time_ms:Math.round(performance.now()-exerciseStart),
+    time_s:+((performance.now()-exerciseStart)/1000).toFixed(3),
+    label,
+    mode:$("mode").value
+  };
+  eventMarkers.push(event);
+  if (records.length) {
+    const row=records[records.length-1];
+    row.event_marker=[row.event_marker,label].filter(Boolean).join(" | ");
+  }
+  $("eventStatus").textContent=`Marked "${label}" at ${event.time_s.toFixed(2)} s.`;
+}
+
+function resizeStage() {
+  const rect = $("stageWrap").getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1,2);
+  stageWidth = Math.max(1,Math.round(rect.width));
+  stageHeight = Math.max(1,Math.round(rect.height));
+  stage.width = Math.round(stageWidth*dpr);
+  stage.height = Math.round(stageHeight*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawStage();
+  redrawGraphs();
+}
+window.addEventListener("resize",resizeStage);
+
+function eyeFeatures(lm) {
+  const li=lm[468], ri=lm[473];
+  const lOuter=lm[33], lInner=lm[133];
+  const lTop=lm[159], lBottom=lm[145];
+  const rOuter=lm[362], rInner=lm[263];
+  const rTop=lm[386], rBottom=lm[374];
+
+  if (!li || !ri || !lOuter || !lInner || !lTop || !lBottom ||
+      !rOuter || !rInner || !rTop || !rBottom) return null;
+
+  const lWidth=lInner.x-lOuter.x;
+  const rWidth=rInner.x-rOuter.x;
+  const lHeight=lBottom.y-lTop.y;
+  const rHeight=rBottom.y-rTop.y;
+
+  if (Math.abs(lWidth)<0.003 || Math.abs(rWidth)<0.003 ||
+      Math.abs(lHeight)<0.003 || Math.abs(rHeight)<0.003) return null;
+
+  const f=[
+    (li.x-lOuter.x)/lWidth,
+    (li.y-lTop.y)/lHeight,
+    (ri.x-rOuter.x)/rWidth,
+    (ri.y-rTop.y)/rHeight
+  ];
+  if (!f.every(Number.isFinite) || f.some(v=>v < -1.5 || v > 2.5)) return null;
+  return f;
+}
+
+function drawIrisPreview() {
+  irisCtx.clearRect(0,0,irisOverlay.width,irisOverlay.height);
+  if (!$("showIris").checked || !latestIrisLandmarks || !cameraStarted) return;
+
+  for (const p of latestIrisLandmarks) {
+    irisCtx.beginPath();
+    irisCtx.arc(p.x*irisOverlay.width,p.y*irisOverlay.height,7,0,Math.PI*2);
+    irisCtx.fillStyle="#24f06a";
+    irisCtx.fill();
+    irisCtx.lineWidth=2;
+    irisCtx.strokeStyle="#ffffff";
+    irisCtx.stroke();
+  }
+}
+
+function drawRecordingFrame() {
+  if (video.readyState<2 || !video.videoWidth) return;
+
+  const w=recordingCanvas.width, h=recordingCanvas.height;
+  recordingCtx.clearRect(0,0,w,h);
+
+  recordingCtx.save();
+  recordingCtx.translate(w,0);
+  recordingCtx.scale(-1,1);
+  recordingCtx.drawImage(video,0,0,w,h);
+
+  if ($("showIris").checked && latestIrisLandmarks) {
+    for (const p of latestIrisLandmarks) {
+      recordingCtx.beginPath();
+      recordingCtx.arc(p.x*w,p.y*h,7,0,Math.PI*2);
+      recordingCtx.fillStyle="#24f06a";
+      recordingCtx.fill();
+      recordingCtx.lineWidth=2;
+      recordingCtx.strokeStyle="#ffffff";
+      recordingCtx.stroke();
+    }
+  }
+  recordingCtx.restore();
+}
+
+function onFaceResults(results) {
+  const faces=results.multiFaceLandmarks;
+
+  if (!faces || !faces.length) {
+    latestFeatures=null;
+    latestGaze=null;
+    latestIrisLandmarks=null;
+    drawIrisPreview();
+    drawRecordingFrame();
+    return;
+  }
+
+  const lm=faces[0];
+  const leftIris=lm[468], rightIris=lm[473];
+
+  latestIrisLandmarks=leftIris && rightIris
+    ? [{x:leftIris.x,y:leftIris.y},{x:rightIris.x,y:rightIris.y}]
+    : null;
+
+  drawIrisPreview();
+  drawRecordingFrame();
+
+  latestFeatures=eyeFeatures(lm);
+  if (!latestFeatures) {
+    latestGaze=null;
+    return;
+  }
+
+  if (calibrating) {
+    calibrationFeatureSamples.push(latestFeatures.slice());
+    return;
+  }
+
+  if (calibrationModelX && calibrationModelY) {
+    const x=predict(calibrationModelX,latestFeatures);
+    const y=predict(calibrationModelY,latestFeatures);
+
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      const nx=clamp(x,0,1), ny=clamp(y,0,1);
+      const now=performance.now();
+
+      if (lastValidGaze && now-lastGazeTime<GAP_MS) {
+        latestGaze={
+          x:lastValidGaze.x+SMOOTHING*(nx-lastValidGaze.x),
+          y:lastValidGaze.y+SMOOTHING*(ny-lastValidGaze.y)
+        };
+      } else {
+        latestGaze={x:nx,y:ny};
+      }
+      lastValidGaze={...latestGaze};
+      lastGazeTime=now;
+    } else {
+      latestGaze=null;
+    }
+  } else {
+    latestGaze=null;
+  }
+}
+
+function solveLinear(A,b) {
+  const n=b.length;
+  const M=A.map((row,i)=>row.slice().concat(b[i]));
+
+  for (let col=0;col<n;col++) {
+    let pivot=col;
+    for (let r=col+1;r<n;r++) {
+      if (Math.abs(M[r][col])>Math.abs(M[pivot][col])) pivot=r;
+    }
+    if (Math.abs(M[pivot][col])<1e-10) return null;
+
+    [M[col],M[pivot]]=[M[pivot],M[col]];
+    const div=M[col][col];
+    for (let c=col;c<=n;c++) M[col][c]/=div;
+
+    for (let r=0;r<n;r++) {
+      if (r===col) continue;
+      const factor=M[r][col];
+      for (let c=col;c<=n;c++) M[r][c]-=factor*M[col][c];
+    }
+  }
+  return M.map(row=>row[n]);
+}
+
+function fitRegression(samples,outputs) {
+  const p=5;
+  const A=Array.from({length:p},()=>Array(p).fill(0));
+  const b=Array(p).fill(0);
+
+  for (let i=0;i<samples.length;i++) {
+    const f=[...samples[i],1];
+    for (let r=0;r<p;r++) {
+      b[r]+=f[r]*outputs[i];
+      for (let c=0;c<p;c++) A[r][c]+=f[r]*f[c];
+    }
+  }
+  for (let i=0;i<p;i++) A[i][i]+=0.00001;
+  return solveLinear(A,b);
+}
+
+function predict(model,features) {
+  if (!model) return NaN;
+  return model[0]*features[0]+model[1]*features[1]+
+    model[2]*features[2]+model[3]*features[3]+model[4];
+}
+
+async function startCamera() {
+  if (cameraStarted) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus("Camera access is unavailable. Open the app through HTTPS in a supported browser.");
+    return;
+  }
+
+  if (typeof FaceMesh === "undefined" || typeof Camera === "undefined") {
+    setStatus("The face-tracking library did not load. Check your internet connection and reload.");
+    return;
+  }
+
+  try {
+    setStatus("Requesting camera permission…");
+    faceMesh=new FaceMesh({
+      locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+    faceMesh.setOptions({
+      maxNumFaces:1,
+      refineLandmarks:true,
+      minDetectionConfidence:0.6,
+      minTrackingConfidence:0.6
+    });
+    faceMesh.onResults(onFaceResults);
+
+    camera=new Camera(video,{
+      onFrame:async()=>{
+        if (faceMesh && video.readyState>=2) {
+          try {
+            await faceMesh.send({image:video});
+          } catch (e) {
+            console.error("Face tracking frame error:",e);
+          }
+        }
+      },
+      width:VIDEO_WIDTH,
+      height:VIDEO_HEIGHT,
+      facingMode:"user"
+    });
+
+    await camera.start();
+    cameraStarted=true;
+    $("cameraBtn").disabled=true;
+    $("calibrateBtn").disabled=false;
+    $("startBtn").disabled=false;
+    setCameraStatus("Camera running");
+    setStatus("Camera running. Keep both eyes visible, sit steadily, then calibrate.");
+    drawRecordingFrame();
+  } catch (error) {
+    console.error(error);
+    setStatus("Could not start the camera. Check browser camera permissions and reload the page.");
+    setCameraStatus("Camera unavailable");
+  }
+}
+
+function getCalibrationLayout() {
+  return [
+    [0.12,0.14],[0.50,0.14],[0.88,0.14],
+    [0.12,0.50],[0.50,0.50],[0.88,0.50],
+    [0.12,0.86],[0.50,0.86],[0.88,0.86]
+  ];
+}
+
+function startCalibration() {
+  if (!cameraStarted || running || calibrating) return;
+
+  calibrationPoints=[];
+  calibrationSamples=[];
+  calibrationIndex=0;
+  calibrating=true;
+  calibrationPointStart=performance.now();
+  calibrationFeatureSamples=[];
+  latestGaze=null;
+  lastValidGaze=null;
+
+  $("calibrateBtn").disabled=true;
+  $("startBtn").disabled=true;
+  $("stopBtn").disabled=false;
+  setStatus("Calibration started. Follow each green dot with your eyes; keep your head as still as comfortable.");
+  drawStage();
+}
+
+function finishCalibrationPoint() {
+  const features=calibrationFeatureSamples;
+  if (features.length>=5) {
+    const averaged=[0,1,2,3].map(i=>mean(features.map(f=>f[i])));
+    const point=getCalibrationLayout()[calibrationIndex];
+    calibrationSamples.push(averaged);
+    calibrationPoints.push(point);
+  }
+
+  calibrationIndex++;
+  calibrationPointStart=performance.now();
+  calibrationFeatureSamples=[];
+
+  if (calibrationIndex>=getCalibrationLayout().length) {
+    calibrating=false;
+    $("calibrateBtn").disabled=false;
+    $("startBtn").disabled=false;
+    $("stopBtn").disabled=true;
+
+    if (calibrationSamples.length<6) {
+      calibrationModelX=calibrationModelY=null;
+      setStatus("Not enough reliable eye data was collected. Improve lighting, keep both eyes visible and repeat calibration.");
+      drawStage();
+      return;
+    }
+
+    calibrationModelX=fitRegression(calibrationSamples,calibrationPoints.map(p=>p[0]));
+    calibrationModelY=fitRegression(calibrationSamples,calibrationPoints.map(p=>p[1]));
+
+    if (!calibrationModelX || !calibrationModelY) {
+      calibrationModelX=calibrationModelY=null;
+      setStatus("Calibration could not be fitted. Please repeat calibration.");
+      drawStage();
+      return;
+    }
+
+    latestGaze=null;
+    lastValidGaze=null;
+    setStatus("Calibration complete. Select an exercise and press Start recording.");
+    drawStage();
+  }
+}
+
+function startCameraVideoRecording() {
+  cameraVideoChunks=[];
+  cameraVideoBlob=null;
+  cameraRecordingAvailable=false;
+  $("videoBtn").disabled=true;
+
+  if (!recordingCanvas.captureStream || !window.MediaRecorder) {
+    setStatus("Exercise recording started, but this browser does not support camera-video recording. Gaze data will still be recorded.");
+    return false;
+  }
+
+  try {
+    const stream=recordingCanvas.captureStream(30);
+    const options={};
+
+    if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9")) {
+      options.mimeType="video/webm;codecs=vp9";
+    } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8")) {
+      options.mimeType="video/webm;codecs=vp8";
+    } else if (MediaRecorder.isTypeSupported("video/webm")) {
+      options.mimeType="video/webm";
+    }
+
+    cameraRecorder=new MediaRecorder(stream,options);
+    cameraRecorder.ondataavailable=event=>{
+      if (event.data && event.data.size>0) cameraVideoChunks.push(event.data);
+    };
+    cameraRecorder.onstop=()=>{
+      if (cameraVideoChunks.length) {
+        const mime=cameraRecorder && cameraRecorder.mimeType
+          ? cameraRecorder.mimeType:"video/webm";
+        cameraVideoBlob=new Blob(cameraVideoChunks,{type:mime});
+        cameraRecordingAvailable=cameraVideoBlob.size>0;
+      }
+      $("videoBtn").disabled=!cameraRecordingAvailable;
+      if (cameraRecordingAvailable) {
+        setStatus("Recording stopped. Camera video is ready to save. CSV and PDF exports are also available.");
+      }
+      if (cameraRecorder && cameraRecorder.stream) {
+        cameraRecorder.stream.getTracks().forEach(track=>track.stop());
+      }
+    };
+    cameraRecorder.onerror=event=>{
+      console.error("Camera video recording error:",event);
+      setStatus("Camera-video recording encountered an error. Gaze data may still be available.");
+    };
+    cameraRecorder.start(250);
+    return true;
+  } catch (error) {
+    console.error("Unable to start camera video recording:",error);
+    cameraRecorder=null;
+    setStatus("Exercise recording started, but camera-video recording could not start. Gaze data will still be recorded.");
+    return false;
+  }
+}
+
+function startRecording() {
+  if (!cameraStarted || running || calibrating) return;
+  if (!calibrationModelX || !calibrationModelY) {
+    setStatus("Please complete calibration before recording.");
+    return;
+  }
+
+  records=[];
+  eventMarkers=[];
+  sessionSymptoms=readSessionSymptoms();
+  $("eventStatus").textContent="Recording started. Use the event buttons to timestamp observations.";
+  running=true;
+  exerciseStart=performance.now();
+  lastFrameTime=exerciseStart;
+  lastRecordAt=0;
+  saccadeNextAt=exerciseStart+700;
+  opkOffset=0;
+  exerciseElapsed=0;
+  target={x:0.5,y:0.5};
+
+  $("startBtn").disabled=true;
+  $("stopBtn").disabled=false;
+  $("calibrateBtn").disabled=true;
+  $("markBreakBtn").disabled=false;
+  $("markRecoveryBtn").disabled=false;
+  $("markObservationBtn").disabled=false;
+  $("csvBtn").disabled=true;
+  $("pdfBtn").disabled=true;
+  $("videoBtn").disabled=true;
+
+  const videoStarted=startCameraVideoRecording();
+  if (videoStarted) setStatus("Recording exercise and camera video. Follow the target.");
+
+  cancelAnimationFrame(animationFrame);
+  animationFrame=requestAnimationFrame(frameLoop);
+}
+
+function stopRecording(message="Recording stopped.") {
+  if (!running && !calibrating) return;
+
+  running=false;
+  calibrating=false;
+  cancelAnimationFrame(animationFrame);
+  if (records.length && sessionSymptoms) {
+    const after=readSymptomScores("post");
+    sessionSymptoms.after=after;
+    sessionSymptoms.npc_distance_cm=$("npcDistance").value===""?"":Number($("npcDistance").value);
+    for (const row of records) {
+      row.headache_after=after.headache;
+      row.dizziness_after=after.dizziness;
+      row.nausea_after=after.nausea;
+      row.fogginess_after=after.fogginess;
+      row.npc_distance_cm=sessionSymptoms.npc_distance_cm;
+    }
+  }
+
+  $("startBtn").disabled=!cameraStarted;
+  $("stopBtn").disabled=true;
+  $("calibrateBtn").disabled=!cameraStarted;
+  $("markBreakBtn").disabled=true;
+  $("markRecoveryBtn").disabled=true;
+  $("markObservationBtn").disabled=true;
+  $("csvBtn").disabled=records.length===0;
+  $("pdfBtn").disabled=records.length===0;
+
+  if (cameraRecorder && cameraRecorder.state!=="inactive") {
+    cameraRecorder.stop();
+  } else {
+    $("videoBtn").disabled=!cameraVideoBlob;
+  }
+
+  setStatus(message+(records.length
+    ? ` ${records.length} time-stamped samples available for export.`:""));
+  drawStage();
+  redrawGraphs();
+}
+
+function chooseRandomSaccadeTarget() {
+  // Vary both direction and jump distance. Sampling from a range of
+  // radii includes small, medium and large jumps rather than only corners.
+  const old={x:target.x,y:target.y};
+  let next=null;
+
+  for (let i=0;i<30;i++) {
+    const angle=Math.random()*Math.PI*2;
+    const distance=0.10+Math.random()*0.62;
+    const x=clamp(old.x+Math.cos(angle)*distance,0.08,0.92);
+    const y=clamp(old.y+Math.sin(angle)*distance,0.08,0.92);
+    const actualDistance=Math.hypot(x-old.x,y-old.y);
+
+    if (actualDistance>=0.09) {
+      next={x,y};
+      break;
+    }
+  }
+
+  if (!next) {
+    next={x:0.08+Math.random()*0.84,y:0.08+Math.random()*0.84};
+  }
+  target=next;
+}
+
+function currentTarget(t,dt) {
+  const mode=$("mode").value;
+  const speed=getSpeed();
+  const margin=0.08;
+  const rangeX=1-2*margin;
+  const rangeY=1-2*margin;
+
+  if (mode==="pursuitH") {
+    const phase=(t/1000)*(0.12+speed*0.035)*getSpeedMultiplier();
+    target.x=margin+(0.5+0.5*Math.sin(phase))*rangeX;
+    target.y=0.5;
+  } else if (mode==="pursuitV") {
+    const phase=(t/1000)*(0.12+speed*0.035)*getSpeedMultiplier();
+    target.x=0.5;
+    target.y=margin+(0.5+0.5*Math.sin(phase))*rangeY;
+  } else if (mode==="pursuitD1") {
+    const phase=(t/1000)*(0.12+speed*0.035)*getSpeedMultiplier();
+    const p=0.5+0.5*Math.sin(phase);
+    target.x=margin+p*rangeX;
+    target.y=margin+p*rangeY;
+  } else if (mode==="pursuitD2") {
+    const phase=(t/1000)*(0.12+speed*0.035)*getSpeedMultiplier();
+    const p=0.5+0.5*Math.sin(phase);
+    target.x=margin+p*rangeX;
+    target.y=margin+(1-p)*rangeY;
+  } else if (mode.startsWith("saccade")) {
+    if (performance.now()>=saccadeNextAt) {
+      if (mode==="saccadeH") {
+        target.x=target.x<0.5?0.88:0.12;
+        target.y=0.5;
+      } else if (mode==="saccadeV") {
+        target.x=0.5;
+        target.y=target.y<0.5?0.86:0.14;
+      } else if (mode==="saccadeD") {
+        const positions=[
+          [0.12,0.14],[0.88,0.86],[0.88,0.14],
+          [0.12,0.86],[0.5,0.5]
+        ];
+        let next;
+        do {
+          next=positions[Math.floor(Math.random()*positions.length)];
+        } while (Math.hypot(next[0]-target.x,next[1]-target.y)<0.15);
+        target.x=next[0];
+        target.y=next[1];
+      } else if (mode==="saccadeRandom") {
+        chooseRandomSaccadeTarget();
+      }
+
+      // Higher speed levels shorten the pause between jumps.
+      const oldInterval=Math.max(450,1400-speed*90);
+      saccadeNextAt=performance.now()+oldInterval/getSpeedMultiplier();
+    }
+  } else if (isOPK(mode)) {
+    // Speed level 8 is 1.5x the previous level-8 stripe speed.
+    const secondsPerStripe=(0.38-speed*(0.13/8))/getSpeedMultiplier();
+    opkOffset += dt/(1000*secondsPerStripe); // Continuous offset: do not wrap at each stripe.
+    target.x=0.5;
+    target.y=0.5;
+  } else if (isNPC(mode) || isStaticDotMode(mode) || mode==="vms") {
+    target.x=0.5;
+    target.y=0.5;
+  }
+
+  target.x=clamp(target.x,0.05,0.95);
+  target.y=clamp(target.y,0.05,0.95);
+  return {x:target.x,y:target.y};
+}
+
+function frameLoop(now) {
+  if (!running) return;
+  const dt=Math.min(80,Math.max(0,now-lastFrameTime));
+  lastFrameTime=now;
+  exerciseElapsed=now-exerciseStart;
+
+  if (exerciseElapsed>=Number($("duration").value)*1000) {
+    stopRecording("Exercise duration completed.");
+    return;
+  }
+
+  const tar=currentTarget(exerciseElapsed,dt);
+  if (now-lastRecordAt>=RECORD_INTERVAL_MS) {
+    const gaze=latestGaze && (now-lastGazeTime<=GAP_MS)?latestGaze:null;
+    records.push({
+      time_ms:Math.round(exerciseElapsed),
+      time_s:+(exerciseElapsed/1000).toFixed(3),
+      mode:$("mode").value,
+      target_x_pct:+(tar.x*100).toFixed(2),
+      target_y_pct:+(tar.y*100).toFixed(2),
+      gaze_x_pct:gaze?+(gaze.x*100).toFixed(2):"",
+      gaze_y_pct:gaze?+(gaze.y*100).toFixed(2):"",
+      event_marker:"",
+      headache_before:sessionSymptoms.before.headache,
+      dizziness_before:sessionSymptoms.before.dizziness,
+      nausea_before:sessionSymptoms.before.nausea,
+      fogginess_before:sessionSymptoms.before.fogginess,
+      headache_after:sessionSymptoms.after.headache,
+      dizziness_after:sessionSymptoms.after.dizziness,
+      nausea_after:sessionSymptoms.after.nausea,
+      fogginess_after:sessionSymptoms.after.fogginess,
+      npc_distance_cm:sessionSymptoms.npc_distance_cm
+    });
+    lastRecordAt=now;
+  }
+
+  drawStage();
+  if (records.length%5===0) redrawGraphs();
+  animationFrame=requestAnimationFrame(frameLoop);
+}
+
+function drawStage() {
+  ctx.clearRect(0,0,stageWidth,stageHeight);
+  ctx.fillStyle="#10141b";
+  ctx.fillRect(0,0,stageWidth,stageHeight);
+
+  if (calibrating) {
+    const points=getCalibrationLayout();
+    const p=points[Math.min(calibrationIndex,points.length-1)];
+
+    ctx.fillStyle="#55e69b";
+    ctx.beginPath();
+    ctx.arc(p[0]*stageWidth,p[1]*stageHeight,13,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.strokeStyle="#fff";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc(p[0]*stageWidth,p[1]*stageHeight,20,0,Math.PI*2);
+    ctx.stroke();
+
+    ctx.fillStyle="#fff";
+    ctx.font="16px Arial";
+    ctx.textAlign="center";
+    ctx.fillText(
+      `Calibration ${Math.min(calibrationIndex+1,points.length)} / ${points.length}`,
+      stageWidth/2,30
+    );
+
+    if (performance.now()-calibrationPointStart>=CALIBRATION_HOLD_MS) {
+      finishCalibrationPoint();
+    }
+    if (calibrating) requestAnimationFrame(drawStage);
+    return;
+  }
+
+  const mode=$("mode").value;
+  if (isOPK(mode) && running) {
+    drawOPK(mode);
+  } else {
+    if (mode==="vms" && running) drawVMSBackground();
+    const x=target.x*stageWidth;
+    const y=target.y*stageHeight;
+
+    ctx.fillStyle="#e44747";
+    if (isNPC(mode)) {
+      const progress=running?clamp(exerciseElapsed/(Number($("duration").value)*1000),0,1):0;
+      const w=20+(stageWidth*0.20-20)*progress;
+      const h=36+(stageHeight/3-36)*progress;
+      ctx.beginPath();
+      ctx.ellipse(x,y,Math.max(10,w/2),Math.max(18,h/2),0,0,Math.PI*2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(x,y,11,0,Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.65)";
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.arc(x,y,18,0,Math.PI*2);
+      ctx.stroke();
+    }
+    if (isObservationMode(mode)) {
+      ctx.fillStyle="#ffffff";
+      ctx.font="13px Arial";
+      ctx.textAlign="center";
+      ctx.fillText(mode==="coverTest"?"Cover test: cover/uncover each eye as clinically directed":
+        mode==="vorCancel"?"VOR cancellation: follow your clinician's movement protocol":
+        mode==="vorH"?"VOR horizontal: keep eyes on target while moving head":
+        mode==="vorV"?"VOR vertical: keep eyes on target while moving head":
+        "Gaze fixation: maintain fixation on the centre target",stageWidth/2,30);
+    }
+    if (mode==="vms") {
+      ctx.fillStyle="#ffffff";
+      ctx.font="13px Arial";
+      ctx.textAlign="center";
+      ctx.fillText("Visual motion sensitivity: keep fixation on the centre target",stageWidth/2,30);
+    }
+  }
+
+  // The estimated gaze position is deliberately not drawn on this canvas.
+  if (!running) {
+    ctx.fillStyle="#aab5c5";
+    ctx.font="15px Arial";
+    ctx.textAlign="center";
+    ctx.fillText(
+      "Choose an exercise, calibrate, then start recording",
+      stageWidth/2,stageHeight-24
+    );
+  }
+}
+
+function drawVMSBackground() {
+  const t=performance.now()/1000;
+  const spacing=48;
+  const shift=(t*getSpeedMultiplier()*18)%spacing;
+  ctx.save();
+  ctx.strokeStyle="rgba(210,220,235,0.45)";
+  ctx.lineWidth=1;
+  for (let x=-spacing;x<stageWidth+spacing;x+=spacing) {
+    ctx.beginPath();
+    ctx.moveTo(x+shift,0);
+    ctx.lineTo(x+shift,stageHeight);
+    ctx.stroke();
+  }
+  for (let y=-spacing;y<stageHeight+spacing;y+=spacing) {
+    ctx.beginPath();
+    ctx.moveTo(0,y+shift);
+    ctx.lineTo(stageWidth,y+shift);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawOPK(mode) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0,0,stageWidth,stageHeight);
+  ctx.clip();
+
+  ctx.fillStyle="#f4f4f4";
+  ctx.fillRect(0,0,stageWidth,stageHeight);
+
+  if (mode==="opkLeft" || mode==="opkRight") {
+    const stripeW=Math.max(30,stageWidth*0.075);
+    const offset=opkOffset*stripeW;
+    const direction=mode==="opkLeft"?-1:1;
+
+    // Derive the visible stripe indices from the unbounded offset.
+    // This keeps the pattern moving continuously without a wraparound jerk.
+    const first=Math.floor((-direction*offset)/stripeW)-2;
+    const last=Math.ceil((stageWidth-direction*offset)/stripeW)+2;
+
+    for (let i=first;i<=last;i++) {
+      const x=i*stripeW+direction*offset;
+      ctx.fillStyle=(i%2===0)?"#151515":"#f4f4f4";
+      ctx.fillRect(x,0,stripeW+0.5,stageHeight);
+    }
+  } else {
+    const stripeH=Math.max(30,stageHeight*0.075);
+    const offset=opkOffset*stripeH;
+    const direction=mode==="opkUp"?-1:1;
+
+    const first=Math.floor((-direction*offset)/stripeH)-2;
+    const last=Math.ceil((stageHeight-direction*offset)/stripeH)+2;
+
+    for (let i=first;i<=last;i++) {
+      const y=i*stripeH+direction*offset;
+      ctx.fillStyle=(i%2===0)?"#151515":"#f4f4f4";
+      ctx.fillRect(0,y,stageWidth,stripeH+0.5);
+    }
+  }
+
+  ctx.restore();
+}
+
+function graphCanvas(canvasId,series,yLabel) {
+  const canvas=$(canvasId);
+  const rect=canvas.getBoundingClientRect();
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const width=Math.max(260,rect.width||500);
+  const height=210;
+
+  canvas.width=Math.round(width*dpr);
+  canvas.height=Math.round(height*dpr);
+
+  const g=canvas.getContext("2d");
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,width,height);
+  g.fillStyle="#fff";
+  g.fillRect(0,0,width,height);
+
+  const left=48,right=12,top=12,bottom=32;
+  const plotW=width-left-right,plotH=height-top-bottom;
+  const all=series.flatMap(s=>s.values.map(v=>v.y).filter(Number.isFinite));
+
+  if (!records.length || !all.length) {
+    g.fillStyle="#7b8798";
+    g.font="13px Arial";
+    g.textAlign="center";
+    g.fillText("No recording yet",width/2,height/2);
+    return;
+  }
+
+  let minY=Math.min(...all),maxY=Math.max(...all);
+  if (Math.abs(maxY-minY)<0.01) {minY-=1;maxY+=1;}
+  const pad=(maxY-minY)*0.1;
+  minY-=pad;
+  maxY+=pad;
+  const maxT=Math.max(1,records[records.length-1].time_s||1);
+  const px=t=>left+(t/maxT)*plotW;
+  const py=v=>top+(1-(v-minY)/(maxY-minY))*plotH;
+
+  g.strokeStyle="#e4e8ee";
+  g.lineWidth=1;
+  g.fillStyle="#667386";
+  g.font="10px Arial";
+  g.textAlign="right";
+
+  for (let i=0;i<=4;i++) {
+    const y=top+(plotH*i/4);
+    g.beginPath();
+    g.moveTo(left,y);
+    g.lineTo(left+plotW,y);
+    g.stroke();
+    g.fillText((maxY-(maxY-minY)*i/4).toFixed(1),left-6,y+3);
+  }
+
+  g.textAlign="center";
+  for (let i=0;i<=4;i++) {
+    const t=maxT*i/4,x=px(t);
+    g.beginPath();
+    g.moveTo(x,top);
+    g.lineTo(x,top+plotH);
+    g.stroke();
+    g.fillText(t.toFixed(1),x,height-13);
+  }
+
+  g.fillStyle="#566174";
+  g.save();
+  g.translate(12,top+plotH/2);
+  g.rotate(-Math.PI/2);
+  g.textAlign="center";
+  g.font="10px Arial";
+  g.fillText(yLabel,0,0);
+  g.restore();
+
+  g.textAlign="center";
+  g.fillText("Time (seconds)",left+plotW/2,height-1);
+
+  for (const s of series) {
+    g.strokeStyle=s.color;
+    g.lineWidth=1.8;
+    g.beginPath();
+    let started=false;
+    for (const v of s.values) {
+      if (!Number.isFinite(v.y)) {started=false;continue;}
+      const x=px(v.x),y=py(v.y);
+      if (!started) {g.moveTo(x,y);started=true;}
+      else g.lineTo(x,y);
+    }
+    g.stroke();
+  }
+}
+
+function calculateKinematics() {
+  const valid=records.map((r,i)=>({
+    i,t:r.time_s,
+    x:r.gaze_x_pct===""?NaN:Number(r.gaze_x_pct),
+    y:r.gaze_y_pct===""?NaN:Number(r.gaze_y_pct)
+  }));
+  const vx=[],vy=[],ax=[],ay=[];
+  let prev=null,prevV=null;
+
+  for (const p of valid) {
+    if (!Number.isFinite(p.x)||!Number.isFinite(p.y)) {
+      vx.push({x:p.t,y:NaN});vy.push({x:p.t,y:NaN});
+      ax.push({x:p.t,y:NaN});ay.push({x:p.t,y:NaN});
+      prev=null;prevV=null;continue;
+    }
+    if (!prev) {
+      vx.push({x:p.t,y:NaN});vy.push({x:p.t,y:NaN});
+      ax.push({x:p.t,y:NaN});ay.push({x:p.t,y:NaN});
+      prev=p;continue;
+    }
+
+    const dt=p.t-prev.t;
+    if (dt<=0||dt>0.25) {
+      vx.push({x:p.t,y:NaN});vy.push({x:p.t,y:NaN});
+      ax.push({x:p.t,y:NaN});ay.push({x:p.t,y:NaN});
+      prev=p;prevV=null;continue;
+    }
+
+    const curV={x:(p.x-prev.x)/dt,y:(p.y-prev.y)/dt,t:p.t};
+    vx.push({x:p.t,y:curV.x});
+    vy.push({x:p.t,y:curV.y});
+
+    if (prevV) {
+      const dt2=curV.t-prevV.t;
+      ax.push({x:p.t,y:dt2>0?(curV.x-prevV.x)/dt2:NaN});
+      ay.push({x:p.t,y:dt2>0?(curV.y-prevV.y)/dt2:NaN});
+    } else {
+      ax.push({x:p.t,y:NaN});
+      ay.push({x:p.t,y:NaN});
+    }
+    prev=p;
+    prevV=curV;
+  }
+  return {vx,vy,ax,ay};
+}
+
+function redrawGraphs() {
+  const targetX=records.map(r=>({x:r.time_s,y:Number(r.target_x_pct)}));
+  const targetY=records.map(r=>({x:r.time_s,y:Number(r.target_y_pct)}));
+  const gazeX=records.map(r=>({x:r.time_s,y:r.gaze_x_pct===""?NaN:Number(r.gaze_x_pct)}));
+  const gazeY=records.map(r=>({x:r.time_s,y:r.gaze_y_pct===""?NaN:Number(r.gaze_y_pct)}));
+  const k=calculateKinematics();
+
+  graphCanvas("graphX",[
+    {values:targetX,color:"#e44747"},
+    {values:gazeX,color:"#1769e0"}
+  ],"X (%)");
+
+  graphCanvas("graphY",[
+    {values:targetY,color:"#e44747"},
+    {values:gazeY,color:"#1769e0"}
+  ],"Y (%)");
+
+  graphCanvas("graphVX",[{values:k.vx,color:"#1769e0"}],"X (%/s)");
+  graphCanvas("graphVY",[{values:k.vy,color:"#1769e0"}],"Y (%/s)");
+  graphCanvas("graphAX",[{values:k.ax,color:"#1769e0"}],"X (%/s²)");
+  graphCanvas("graphAY",[{values:k.ay,color:"#1769e0"}],"Y (%/s²)");
+}
+
+function downloadBlob(blob,filename) {
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+
+function saveCSV() {
+  if (!records.length) return;
+  const headers=Object.keys(records[0]);
+  const escapeCSV=v=>{
+    const value=v==null?"":String(v);
+    return /[",\n]/.test(value)?`"${value.replace(/"/g,'""')}"`:value;
+  };
+  const csv=[
+    headers.join(","),
+    ...records.map(r=>headers.map(h=>escapeCSV(r[h])).join(",")),
+    "",
+    "EVENT MARKERS",
+    "time_s,mode,label",
+    ...eventMarkers.map(e=>[e.time_s,e.mode,e.label].map(escapeCSV).join(","))
+  ].join("\r\n");
+
+  downloadBlob(
+    new Blob([csv],{type:"text/csv;charset=utf-8;"}),
+    `oculomotor-${Date.now()}.csv`
+  );
+}
+
+function saveCameraVideo() {
+  if (!cameraVideoBlob||!cameraRecordingAvailable) return;
+  downloadBlob(cameraVideoBlob,`oculomotor-camera-${Date.now()}.webm`);
+}
+
+function savePDF() {
+  if (!records.length) return;
+  if (!window.jspdf||!window.jspdf.jsPDF) {
+    setStatus("PDF library did not load. Check your internet connection and try again.");
+    return;
+  }
+
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+  const date=new Date().toLocaleString();
+
+  pdf.setFontSize(18);
+  pdf.text("Oculomotor Recording Report",15,18);
+  pdf.setFontSize(10);
+  pdf.text(`Date: ${date}`,15,26);
+  pdf.text(`Exercise: ${$("mode").selectedOptions[0].text}`,15,32);
+  pdf.text(`Recorded duration: ${(records[records.length-1].time_s||0).toFixed(2)} seconds`,15,38);
+  pdf.text(`Calibration: ${calibrationModelX&&calibrationModelY?"completed":"not available"}`,15,44);
+  const sym=sessionSymptoms || readSessionSymptoms();
+  pdf.setFontSize(10);
+  pdf.text("Symptoms before (0–10): H "+sym.before.headache+" | D "+sym.before.dizziness+" | N "+sym.before.nausea+" | F "+sym.before.fogginess,15,49);
+  pdf.text("Symptoms after (0–10): H "+sym.after.headache+" | D "+sym.after.dizziness+" | N "+sym.after.nausea+" | F "+sym.after.fogginess,15,54);
+  if (sym.npc_distance_cm!=="") pdf.text("Recorded NPC target distance: "+sym.npc_distance_cm+" cm (manual entry)",15,59);
+
+  pdf.setFontSize(9);
+  const disclaimer="Webcam-based estimated gaze. Results depend on camera, lighting, head position and calibration; this report is not a validated clinical measurement.";
+  pdf.text(pdf.splitTextToSize(disclaimer,180),15,65);
+
+  const charts=[
+    ["Horizontal position","graphX"],
+    ["Vertical position","graphY"],
+    ["Horizontal velocity","graphVX"],
+    ["Vertical velocity","graphVY"],
+    ["Horizontal acceleration","graphAX"],
+    ["Vertical acceleration","graphAY"]
+  ];
+
+  let y=80;
+  for (let i=0;i<charts.length;i++) {
+    if (i===2||i===4) {
+      pdf.addPage();
+      y=18;
+    }
+    pdf.setFontSize(11);
+    pdf.text(charts[i][0],15,y);
+    const image=$(charts[i][1]).toDataURL("image/png");
+    pdf.addImage(image,"PNG",15,y+3,180,65);
+    y+=82;
+  }
+  if (eventMarkers.length) {
+    pdf.addPage();
+    pdf.setFontSize(14);
+    pdf.text("Timestamped observation markers",15,18);
+    pdf.setFontSize(10);
+    let ey=27;
+    for (const event of eventMarkers) {
+      if (ey>275) { pdf.addPage(); ey=18; }
+      pdf.text(`${event.time_s.toFixed(2)} s — ${event.mode} — ${event.label}`,15,ey);
+      ey+=7;
+    }
+  }
+  pdf.save(`oculomotor-report-${Date.now()}.pdf`);
+}
+
+$("cameraBtn").addEventListener("click",startCamera);
+$("calibrateBtn").addEventListener("click",startCalibration);
+$("startBtn").addEventListener("click",startRecording);
+$("stopBtn").addEventListener("click",()=>stopRecording());
+$("csvBtn").addEventListener("click",saveCSV);
+$("pdfBtn").addEventListener("click",savePDF);
+$("videoBtn").addEventListener("click",saveCameraVideo);
+$("markBreakBtn").addEventListener("click",()=>markEvent("NPC break observed"));
+$("markRecoveryBtn").addEventListener("click",()=>markEvent("NPC recovery observed"));
+$("markObservationBtn").addEventListener("click",()=>markEvent("Clinician observation"));
+
+$("mode").addEventListener("change",()=>{
+  drawStage();
+  const mode=$("mode").value;
+  if (mode==="npc") {
+    setStatus("NPC screen-based observation selected. The oval grows on screen; it does not physically approach the face. Enter a separately measured distance if performing a physical NPC test.");
+  } else if (isObservationMode(mode)) {
+    setStatus("Observation mode selected. Start recording to capture camera video and estimated gaze. Use event markers for clinically observed events.");
+  } else if (mode==="vms") {
+    setStatus("VMS selected. The background moves while the centre target remains visible. Use clinical supervision and stop if symptoms become excessive.");
+  } else {
+    setStatus("Exercise selected. Calibrate before recording if you have not already done so.");
+  }
+});
+
+$("speed").addEventListener("input",()=>{
+  $("speedValue").textContent=`${getSpeed()} / 8`;
+  if (!running) drawStage();
+});
+
+$("showIris").addEventListener("change",()=>{
+  drawIrisPreview();
+  drawRecordingFrame();
+});
+
+resizeStage();
+$("speedValue").textContent=`${getSpeed()} / 8`;
+drawStage();
+redrawGraphs();
+})();
+</script>
+
+<script>
+/* BASIC PASSWORD GATE — deterrent only, not secure authentication.
+   The password is present in the client-side source and can be discovered by technical users. */
+(function () {
+  const APP_PASSWORD = '#Neuro26ActiveHub!';
+  const ACCESS_KEY = "oculomotor_app_access_v1";
+  const gate = document.getElementById("appPasswordGate");
+  const form = document.getElementById("appGateForm");
+  const field = document.getElementById("appGatePassword");
+  const error = document.getElementById("appGateError");
+
+  function unlock() {
+    gate.style.display = "none";
+    document.body.classList.remove("password-locked");
+  }
+
+  try {
+    if (localStorage.getItem(ACCESS_KEY) === "granted") unlock();
+  } catch (e) {
+    // If browser storage is unavailable, the password will be requested again on reload.
+  }
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (field.value === APP_PASSWORD) {
+      try { localStorage.setItem(ACCESS_KEY, "granted"); } catch (e) {}
+      error.classList.remove("visible");
+      unlock();
+    } else {
+      error.classList.add("visible");
+      field.value = "";
+      field.focus();
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
